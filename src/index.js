@@ -16,8 +16,6 @@ const ethers = require("ethers");
 const { HDNodeWallet } = ethers;
 
 // Polkadot ed25519 derivation + keyring
-const { derivePath: ed25519DerivePath } = require("ed25519-hd-key");
-const { Keyring } = require("@polkadot/keyring");
 const {
   cryptoWaitReady,
   hdLedger,
