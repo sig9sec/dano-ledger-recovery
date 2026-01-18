@@ -18,9 +18,18 @@ const { HDNodeWallet } = ethers;
 // Polkadot ed25519 derivation + keyring
 const { derivePath: ed25519DerivePath } = require("ed25519-hd-key");
 const { Keyring } = require("@polkadot/keyring");
-const { cryptoWaitReady } = require("@polkadot/util-crypto");
+const {
+  cryptoWaitReady,
+  hdLedger,
+  encodeAddress,
+} = require("@polkadot/util-crypto");
 
-function deriveBitcoinBech32(mnemonic, account = 0, change = 0, count = 10) {
+function deriveBitcoinNativeSegwit(
+  mnemonic,
+  account = 0,
+  change = 0,
+  count = 10,
+) {
   const seed = bip39.mnemonicToSeedSync(mnemonic);
   const root = bip32.fromSeed(seed);
 
@@ -37,17 +46,10 @@ function deriveBitcoinBech32(mnemonic, account = 0, change = 0, count = 10) {
 }
 
 function deriveEthereum(mnemonic, account = 0, change = 0, count = 10) {
-  // In ethers v6, HDNodeWallet.fromPhrase/fromMnemonic defaults to a non-root path (depth 5).
-  // To avoid "cannot derive root path ... at non-zero depth" and to ensure BIP44 parity with other wallets,
-  // construct the wallet at each explicit full path directly.
   const addresses = [];
   for (let i = 0; i < count; i++) {
     const path = `m/44'/60'/${account}'/${change}/${i}`;
-    const wallet = HDNodeWallet.fromPhrase(
-      mnemonic,
-      undefined,
-      path
-    );
+    const wallet = HDNodeWallet.fromPhrase(mnemonic, undefined, path);
     addresses.push({ path, address: wallet.address });
   }
   return addresses;
@@ -60,22 +62,14 @@ async function derivePolkadot(
   count = 10,
   ss58 = 0,
 ) {
-  // Uses SLIP-0010 ed25519 derivation with BIP39 seed
-  // Path: m/44'/354'/account'/change'/index' (all hardened, as most wallets do)
   await cryptoWaitReady();
-
-  const seed = bip39.mnemonicToSeedSync(mnemonic);
-  const seedHex = seed.toString("hex");
-
-  const keyring = new Keyring({ type: "ed25519", ss58Format: ss58 });
 
   const addresses = [];
   for (let i = 0; i < count; i++) {
-    const path = `m/44'/354'/${account}'/${change}'/${i}'`;
-    const derived = ed25519DerivePath(path, seedHex);
-    const privateKey = derived.key; // 32-byte Buffer
-    const pair = keyring.addFromSeed(privateKey);
-    addresses.push({ path, address: pair.address });
+    const path = `m/44'/354'/${i}'/0'/0'`;
+    const ledged = hdLedger(mnemonic, path, 2048);
+    const address = encodeAddress(ledged.publicKey, ss58);
+    addresses.push({ path, address });
   }
   return addresses;
 }
@@ -109,11 +103,15 @@ async function main() {
 
   console.log("Deriving addresses (first 10) — this may take a second...");
 
-  const btc = deriveBitcoinBech32(mnemonic);
+  const btc = deriveBitcoinNativeSegwit(mnemonic);
   const eth = deriveEthereum(mnemonic);
   const dot = await derivePolkadot(mnemonic);
 
-  const out = { bitcoin_bech32: btc, ethereum: eth, polkadot: dot };
+  const out = {
+    bitcoin_native_segwit: btc,
+    ethereum: eth,
+    polkadot: dot,
+  };
   console.log(JSON.stringify(out, null, 2));
 }
 
